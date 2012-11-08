@@ -18,38 +18,33 @@
 
 #define switch_debounce 100
 #define button_debounce 100
+#define pot_debounce 50
+#define pot_threshold 50
 
 long lastSwitchCheck;
 long lastButtonCheck;
-
+long lastPotCheck;
 
 int lanternPins[number_of_lanternModes] = {5, 6, 7, 8, 9};
 int lanternMode = 0;
+int button1Mode = 0;
+int button2Mode = 0;
 
-int buttonMode = 0;
 
 // rotary potentiometers pin assignments and names:
-int softPot1 = A0;
-int softPot2 = A1;
+int softPot1 = A1;
+int softPot2 = A0;
 
 // touch sensors pin assignments and names:
-CapacitiveSensor   cs_2_3 = CapacitiveSensor(2,3);        // 1M resistor between pins 2 & 3, pin 3 is sensor pin, add a wire and or foil if desired
-CapacitiveSensor   cs_2_4 = CapacitiveSensor(2,4);        // 1M resistor between pins 2 & 4, pin 4 is sensor pin, add a wire and or foil if desired
+CapacitiveSensor   cs_2_3 = CapacitiveSensor(2,4);        // 1M resistor between pins 2 & 3, pin 3 is sensor pin, add a wire and or foil if desired
+CapacitiveSensor   cs_2_4 = CapacitiveSensor(2,3);        // 1M resistor between pins 2 & 4, pin 4 is sensor pin, add a wire and or foil if desired
 
 // turning on and off the lights
-int old_sensor1 = LOW;
-//int oldsensor1reading = 0;
+boolean old_sensor1 = LOW;
+boolean old_sensor2 = LOW;
 
-int old_sensor2 = LOW;
-
-//int onstate = 0; // 0 = off, 1 = on & animated, 2 = static
-//
-//int sensor2reading = 0;
-//int oldsensor2reading = 0;
-//int colorstate = 0; // 0 = default for each lanternMode, 1 = white
-
-//boolean lights_on = false;
-//boolean static_state = false;
+long pot1_value = 1000;
+long pot2_value = 0;
 
 // LED strip setup following:
 int nLEDs = 32; // number of LEDs on strand
@@ -58,6 +53,8 @@ int clockPin = 11;
 LPD8806 strip = LPD8806(32, dataPin, clockPin); 
 /* First parameter is the number of LEDs in the strand.  The LED strips are 32 LEDs per meter but you can extend or cut the strip.  Next two parameters are SPI data and clock pins. */
 
+
+
 void setup()
 {
 
@@ -65,8 +62,8 @@ void setup()
     pinMode(lanternPins[x], INPUT); 
   }
 
-  Timer1.initialize(33333);
-  Timer1.attachInterrupt(callback);
+  Timer1.initialize(33333); // Start the timer, value is in microseconds
+  Timer1.attachInterrupt(interrupt);
 
   Serial.begin(115200);
   strip.begin();
@@ -74,34 +71,47 @@ void setup()
 
 }
 
-void callback() {
-  Serial.println("Callback");
-
-  if (buttonMode == buttonMode_off) {
+void interrupt() {
+  //Serial.println("interrupt");
+  
+  // Lights off!
+  if (button1Mode == buttonMode_off) {
     uint32_t c = strip.Color(0, 0, 0);    //turn LEDs off
     for(int i=0; i<strip.numPixels(); i++) {
       strip.setPixelColor(i, c);
     }
     strip.show();
-
   } 
-
-  else if (buttonMode == buttonMode_solid) {
-    uint32_t c = strip.Color(127, 127, 127);    //turn LEDs off
+  
+  // Solid colors (white or color wheel)
+  else if (button1Mode == buttonMode_solid) {
+    
+    uint32_t c;
+    
+    if (button2Mode == 1) {
+      c = strip.Color(127, 127, 127);
+    } else {
+      c = Wheel((uint16_t) (pot2_value / 2) % 384);
+    }
+    
+    float b = get_brightness();
+    c = strip.Filter(c, b, b, b);
+        
     for(int i=0; i<strip.numPixels(); i++) {
       strip.setPixelColor(i, c);
     }
     strip.show();
   }
   
-  else if (buttonMode == buttonMode_pattern) {
-    
+  // Pattern Mode
+  else if (button1Mode == buttonMode_pattern) {
     
   }
 }
 
-void check_switches() {
+void check_switches() { // Check the state of the reed switches
   
+  // Debounce so it doesn't flip out
   if (millis() - lastSwitchCheck < switch_debounce) return;
   else lastSwitchCheck = millis();
   
@@ -110,46 +120,102 @@ void check_switches() {
       lanternMode = x;
       Serial.print("New lanternMode! ");
       Serial.println(lanternMode, DEC);
-      break; 
+      return; 
     }
   }
 }
 
-void check_buttons() {
+void check_buttons() { // Check the state of the cap buttons
   
+  // Debounce so it doesn't flip out
   if (millis() - lastButtonCheck < button_debounce) return;
   else lastButtonCheck = millis();
   
   long start = millis();                           // Capacitive Sensor setup
   long sensor1 =  cs_2_3.capacitiveSensor(30);      // Sensor 1 (on/static/off toggle)
   long sensor2 =  cs_2_4.capacitiveSensor(30);      // Sensor 2 (white/color toggle)
-
+  
+  // Check button one
   if (sensor1 > sensorThreshold && old_sensor1 == LOW) {
     old_sensor1 = HIGH;
-    buttonMode += 1;
-
-    if (buttonMode == 3) buttonMode = 0;
+    button1Mode += 1;
+    if (button1Mode == 3) button1Mode = 0;
 
     Serial.print("Sensor1 state changed: ");
     Serial.println(sensor1, DEC);
-
+    return;
   } 
   else if (sensor1 == 0 && old_sensor1 == HIGH) {
     old_sensor1 = LOW; 
     Serial.println("Sensor1 went LOW");
-    Serial.print("buttonMode: ");
-    Serial.println(buttonMode, DEC);
+    Serial.print("button1Mode: ");
+    Serial.println(button1Mode, DEC);
+    return;
   }
+    
+  // Check button two (if button one didn't trigger any events)
+  if (sensor2 > sensorThreshold && old_sensor2 == LOW) {
+    old_sensor2 = HIGH;
+    button2Mode += 1;
+    if (button2Mode == 2) button2Mode = 0;
+    
+    Serial.print("Sensor2 state changed: ");
+    Serial.println(sensor2, DEC);
+
+  } 
+  else if (sensor2 == 0 && old_sensor2 == HIGH) {
+    old_sensor2 = LOW; 
+    Serial.println("Sensor2 went LOW");
+    Serial.print("button2Mode: ");
+    Serial.println(button2Mode, DEC);
+  }
+}
+
+void check_pots() { // Check the state of the soft pots
+  
+  // Debounce so it doesn't flip out
+  if (millis() - lastPotCheck < pot_debounce) return;
+  else lastPotCheck = millis();
+  
+  long pot1 = analogRead(softPot1);
+  long pot2 = analogRead(softPot2);
+  
+  // There seems to be some cross talk, so filter everything below 50 or so
+  if (pot1 < pot_threshold && pot2 < pot_threshold) return;
+  
+  if (pot1 > pot_threshold) {
+    pot1_value = pot1; 
+  }
+  if (pot2 > pot_threshold) {
+    pot2_value = pot2; 
+  }
+  
+//  Serial.print("Pot - ");
+//  Serial.print(pot1, DEC);
+//  Serial.print(" ");
+//  Serial.println(pot2, DEC);
+  
+}
+
+float get_brightness() {
+  return pot1_value / 1000.0; 
 }
 
 void loop() {
 
-  // read reed switches and store their values as ____val
-
   check_switches();
   check_buttons();
+  check_pots();
 
 } //end main loop
+
+
+
+
+
+
+
+
 
 
 // color functions to follow: 
