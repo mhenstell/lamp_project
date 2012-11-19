@@ -21,6 +21,9 @@
 #define pot_debounce 50
 #define pot_threshold 50
 
+#define height 8
+#define width 3
+
 long lastSwitchCheck;
 long lastButtonCheck;
 long lastPotCheck;
@@ -52,6 +55,8 @@ int dataPin  = 12; // Chose 2 pins for output; can be any valid output pins:
 int clockPin = 11;
 LPD8806 strip = LPD8806(32, dataPin, clockPin); 
 /* First parameter is the number of LEDs in the strand.  The LED strips are 32 LEDs per meter but you can extend or cut the strip.  Next two parameters are SPI data and clock pins. */
+
+
 
 
 
@@ -95,7 +100,7 @@ void interrupt() {
     }
     
     float b = get_brightness();
-    c = strip.Filter(c, b, b, b);
+    //c = strip.Filter(c, b, b, b);
         
     for(int i=0; i<strip.numPixels(); i++) {
       strip.setPixelColor(i, c);
@@ -280,20 +285,20 @@ void runner() { // function that scrolls a single light down the strip
 }
 
 
-void fire() { // fire animation function
-
-  int i; // variable number for pixels
-  int pixelvalue[strip.numPixels()]; // makes an array, so this makes each led act individually
-  while (true) {
-    for (i=0; i < strip.numPixels(); i++) { // for each frame, along the whole strip...
-      pixelvalue[i] = changefire(pixelvalue[i]);  // change the pixel color according to changefire function
-      strip.setPixelColor(i,firepixel(pixelvalue[i])); // tells the pixels to turn on with firepixel colors
-      // will need to add an interrupt to check for sensor inputs
-    }  
-    strip.show();   // write all the pixels out
-    delay(5);
-  }  
-}
+//void fire() { // fire animation function
+//
+//  int i; // variable number for pixels
+//  int pixelvalue[strip.numPixels()]; // makes an array, so this makes each led act individually
+//  while (true) {
+//    for (i=0; i < strip.numPixels(); i++) { // for each frame, along the whole strip...
+//      pixelvalue[i] = changefire(pixelvalue[i]);  // change the pixel color according to changefire function
+//      strip.setPixelColor(i,firepixel(pixelvalue[i])); // tells the pixels to turn on with firepixel colors
+//      // will need to add an interrupt to check for sensor inputs
+//    }  
+//    strip.show();   // write all the pixels out
+//    delay(5);
+//  }  
+//}
 
 uint32_t firepixel(uint16_t pixelvalue) { // maps the color values for fire
   return strip.Color(map(pixelvalue, 0, 384, 0, 127), map(pixelvalue, 0, 384, 0, 50), 0); // this map limits the range that red and green are allowed to flicker in (and sets blue to 0) red can go up to 127 and green can go
@@ -307,7 +312,7 @@ uint16_t changefire(uint16_t oldpixel) { // randomizer function that tells the r
 
 void colorChase(uint32_t c, uint8_t wait) {
   int i;
-
+  
   // Start by turning all pixels off:
   for(i=0; i<strip.numPixels(); i++) strip.setPixelColor(i, 0);
 
